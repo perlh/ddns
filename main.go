@@ -13,20 +13,21 @@ import (
 
 // UDP server端
 func main() {
+	dnsFile := "./dns.txt"
 
-	// 设置初始域名解析记录
-	//DomainTypeA = append(DomainTypeA, A{domain: "2.d.hsm.cool", ip: [16]byte{127, 0, 0, 1}, ipType: 4})
-	//DomainTypeA = append(DomainTypeA, A{domain: "1.d.hsm.cool", ip: [16]byte{127, 0, 0, 2}, ipType: 4})
-	//os.Args[1]
+	dnsPort := 53
 
+	// 从本地文件中导入静态dns记录
+	loadLocalDnsFile(dnsFile)
 	listen, err := net.ListenUDP("udp", &net.UDPAddr{
 		IP:   net.IPv4(0, 0, 0, 0),
-		Port: 53,
+		Port: dnsPort,
 	})
 	if err != nil {
 		fmt.Println("listen failed, err:", err)
 		return
 	}
+
 	defer func(listen *net.UDPConn) {
 		err := listen.Close()
 		if err != nil {
@@ -36,24 +37,15 @@ func main() {
 	var data [512]byte
 
 	// 设置一个定时器
-	clock := 0
 	// auth
 	authByte := []byte{0xc0, 0x0f, 0x00, 0x06, 0x00, 0x01, 0x00, 0x00, 0x00, 0xb4, 0x00, 0x41, 0x07, 0x6d, 0x61, 0x72, 0x74, 0x69, 0x6e, 0x69, 0x06, 0x64, 0x6e, 0x73, 0x70, 0x6f, 0x64, 0x03, 0x6e, 0x65, 0x74, 0x00, 0x0c, 0x66, 0x72, 0x65, 0x65, 0x64, 0x6e, 0x73, 0x61, 0x64, 0x6d, 0x69, 0x6e, 0x06, 0x64, 0x6e, 0x73, 0x70, 0x6f, 0x64, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x63, 0x4b, 0x72, 0x54, 0x00, 0x00, 0x0e, 0x10, 0x00, 0x00, 0x00, 0xb4, 0x00, 0x12, 0x75, 0x00, 0x00, 0x00, 0x00, 0xb4}
 	go checkDNS()
 	go startHttp()
 	for {
-		if clock%5 == 0 {
-			// 每查寻5次更新一下dns表
-			updateDNSByLocalFile()
-		}
-		clock++
-		// 循环
-		if clock > 5000 {
-			clock = 0
-		}
+
 		//每个DNS数据包限制在512字节之内(防止IP包超过MTU被碎片化)，
 		n, addr, err := listen.ReadFromUDP(data[:]) // 接收数据
-
+		//fmt.Println("dns服务开启成功！")
 		//fmt.Println("源：", hex.EncodeToString(data[:n]))
 		var end int
 		for end = 12; end < 512; end++ {
@@ -62,6 +54,12 @@ func main() {
 			}
 		}
 		Domain := data[12:end]
+		// dnslog
+		domainLable := convertHex2String(Domain)
+
+		domainLable += "\n"
+
+		dnslogRecode = append(dnslogRecode, domainLable)
 		DnsType := binary.BigEndian.Uint16(data[end+1 : end+3])
 		if DnsType == 0x0001 {
 			// A类型
@@ -227,19 +225,8 @@ func main() {
 			}
 			// 添加记录
 			if control == 0x02 {
+				fmt.Println("add data")
 				domainLable1 := convertHex2String(Domain)
-				//0x02 添加指定域名的dns
-
-				//if checkDomainExit(DomainTypeA, domainLable1) {
-				//	//fmt.Println(domainLable1)
-				//	_, err = listen.WriteToUDP([]byte{0x01}, addr) // 发送数据
-				//	if err != nil {
-				//		fmt.Println("err:", err)
-				//		continue
-				//	}
-				//	continue
-				//
-				//}
 				var ipTmp [16]byte
 				dnsData := A{domain: domainLable1, ip: [16]byte{0x00, 0x01, 0x02, 0x03}, ipType: 4, ttl: 1}
 				if data[end+7] == 0x04 {
@@ -252,6 +239,7 @@ func main() {
 					checkDnsAdd := checkDomainExitAndIpNotExit(DomainTypeA, domainLable1, ipTmp)
 					if checkDnsAdd == 0 {
 						// 域名不在表中，ip也不在表中
+						dnsData.dnsType = 0
 						add(&DomainTypeA, dnsData)
 
 					} else if checkDnsAdd == 1 {
@@ -281,6 +269,7 @@ func main() {
 					if checkDnsAdd == 0 {
 						// 域名不在表中，ip也不在表中
 						dnsData.ipType = 6
+						DnsType = 0
 						add(&DomainTypeA, dnsData)
 					} else if checkDnsAdd == 1 {
 						// 域名在表中，ip不在表中
@@ -300,7 +289,7 @@ func main() {
 					fmt.Println(time.Now().Format("2006/1/2 15:04:05"), addr, "添加DNS记录成功,域名:", domainLable1, ",", "IP:", getIpv6(data[end+8:end+24]))
 				}
 				// 添加成功
-				_, err = listen.WriteToUDP([]byte([]byte{0x00}), addr) // 发送数据
+				_, err = listen.WriteToUDP([]byte{0x00}, addr) // 发送数据
 				if err != nil {
 					fmt.Println("err:", err)
 					continue

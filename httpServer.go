@@ -7,6 +7,7 @@ import (
 
 func startHttp() {
 	http.HandleFunc("/dns", handler1203)
+	http.HandleFunc("/dnslog", dnslog)
 	http.ListenAndServe(":8080", nil)
 }
 

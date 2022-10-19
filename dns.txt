@@ -1,3 +1,2 @@
-2.d.hsm.cool 192.168.1.1
-3.d.hsm.cool 192.168.2.1
-4.d.hsm.cool 192.168.3.1
+A dns.hsm.cool 192.168.1.1
+AAAA 6.hsm.cool fe80::b8ec:6fff:fe7a:b189
