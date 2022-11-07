@@ -78,7 +78,7 @@ func loadLocalDnsFile(fileName string) bool {
 		var recodeO A
 		recodeO.dnsType = 1
 		recode := strings.Split(s.Text(), " ")
-		fmt.Println(recode, recode[0], recode[1], recode[2])
+		//fmt.Println(recode, recode[0], recode[1], recode[2])
 		switch recode[0] {
 		case "A":
 			{
@@ -86,19 +86,12 @@ func loadLocalDnsFile(fileName string) bool {
 				recodeO.domain = recode[1]
 				var tmpByte16 [16]byte
 				ipv4 := net.ParseIP(recode[2])
-				//tem1 := strings.Split(recode[2], ".")
-				//ip1 ,_:=
 				for index1, data := range ipv4.To4() {
-					//t1, _ := strconv.Atoi(data)
 					tmpByte16[index1] = data
 				}
 				recodeO.ip = tmpByte16
 
 				add(&DomainTypeA, recodeO)
-				//recodeO.ip = [16]byte{byte(ip1)}
-				//recodeO.ip = recodeO[2]
-				//fmt.Printf("%T", recode[1])
-				//fmt.Println(recode[1], recode[2])
 			}
 		case "AAAA":
 			{

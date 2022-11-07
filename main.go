@@ -77,7 +77,7 @@ func main() {
 	go checkDNS()
 	go startHttp()
 
-	log.Println("server Ip:", config.LinstenIP, ":", config.Port)
+	log.Printf("ddns server:%v:%v", config.LinstenIP, config.Port)
 	//log.Println("server Port:", config.Port)
 	log.Println("server local dns file path:", config.DnsFile)
 	for {

@@ -15,28 +15,47 @@
 ## 使用
 1. 首先得拥有自己的域名
 2. 首先在云解析DNS上添加NS记录（比如d.hsm.cool 服务器指向www.hsm.cool）
-3. 在服务区上运行`ddns服务器程序`
-4. 在本地运行ddns客户端,如`./ddns -i eth0 -t 6 -d test.d.hsm.cool -s www.hsm.cool`
-
-域名test.d.hsm.cool和本地客户端ip进行绑定。
-
+3. 在服务区上运行`ddns服务器程序` 
 ``` bash
-hsm@orangepizero2 ~> ./ddns 
+hsm@orangepizero2 ~>  ./ddns -d dns.txt -ip 0.0.0.0 -port 8050 
+hsm@orangepizero2 ~> # or
+hsm@orangepizero2 ~>  ./ddns -c ddns.conf
 ```
+
+配置文件 `ddns.conf`
+```text
+dns_file=dns.txt
+listen_ip=0.0.0.0
+listen_port=8050
+```
+>ddns.conf不能有注释和空格
+
+
+## 为ddns创建service
+
+`sudo vim /usr/systemd/system/ddns.service`
+```text
+[Unit]
+Description=DDNS service
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+Restart=on-failure
+RestartSec=5s
+ExecStart= /opt/ddns/bin/ddns-server-linux-amd -c /opt/ddns/etc/ddns.conf
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+```
+**注意修改**
+> ExecStart= /opt/ddns/bin/ddns-server-linux-amd -c /opt/ddns/etc/ddns.conf
+
 
 ## 例子
 ``` bash
-2022/10/18 18:58:55 222.204.59.190:32784 添加解析记录成功， o.d.hsm.cool 新IP: 222.204.59.190
-2022/10/18 18:58:55 222.204.59.190:47258 更新DNS记录成功，域名： o.d.hsm.cool 新IP: 222.204.59.190
-2022/10/18 18:58:55 222.204.59.190:52676 查询DNS解析记录成功!
-		2788.www.hsm.cool  2001:250:6c00:1002::4:7883 2
-		185.www.hsm.cool  222.204.59.190 2
-		o.d.hsm.cool  222.204.59.190 4
-2022/10/18 18:59:24 117.169.16.206:54816 查询DNS成功 o.d.hsm.cool 222.204.59.190
-2022/10/18 18:59:24 117.169.16.198:54118 查询DNS成功 o.d.hsm.cool 222.204.59.190
-2022/10/18 18:59:24 117.169.16.198:28586 查询DNS成功 o.d.hsm.cool 222.204.59.190
-2022/10/18 18:59:25 60.215.138.169:57820 查询DNS成功 o.d.hsm.cool 222.204.59.190
-2022/10/18 18:59:25 60.215.138.169:50515 查询DNS成功 o.d.hsm.cool 222.204.59.190
-2022/10/18 18:59:41 182.98.160.83:34004 查询DNS成功 o.d.hsm.cool 222.204.59.190
-2022/10/18 18:59:41 182.98.160.83:34829 查询DNS成功 o.d.hsm.cool 222.204.59.190
+2022/11/07 19:56:47 ddns server:0.0.0.0:8050
+2022/11/07 19:56:47 server local dns file path: dns.txt
 ```
