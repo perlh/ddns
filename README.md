@@ -54,8 +54,16 @@ WantedBy=multi-user.target
 > ExecStart= /opt/ddns/bin/ddns-server-linux-amd -c /opt/ddns/etc/ddns.conf
 
 
+**重载配置并且启动ddns服务**
+```bash
+root@VM-12-8-ubuntu:/opt/ddns/bin# systemctl daemon-reload
+root@VM-12-8-ubuntu:/opt/ddns/bin# systemctl start ddns.service
+root@VM-12-8-ubuntu:/opt/ddns/bin# systemctl status ddns.service
+```
+
 ## 例子
 ``` bash
+hsm@VM-12-8-ubuntu /o/d/bin> ./ddns -c ddns.conf
 2022/11/07 19:56:47 ddns server:0.0.0.0:8050
 2022/11/07 19:56:47 server local dns file path: dns.txt
 ```
