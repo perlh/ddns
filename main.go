@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"flag"
 	"fmt"
+	"log"
 	"net"
 	"strconv"
 	"time"
@@ -11,20 +13,53 @@ import (
 
 //startHttp
 
+type Config struct {
+	LinstenIP string
+	Port      int
+	DnsFile   string
+}
+
+var (
+	listenIp       = flag.String("ip", "", "Dns server Listen Ip")
+	listenPort     = flag.Int("port", -1, "DNS server Port")
+	configFilePath = flag.String("c", "", "Config file  path")
+	dnsFilePath    = flag.String("d", "", "DNS local File recode ")
+
+	config Config
+)
+
 // UDP server端
 func main() {
-	dnsFile := "./dns.txt"
+	flag.String("example", "", "./ddns -d dns.txt -ip 0.0.0.0 -port 8050 or ./ddns -c ddns.conf")
+	flag.Parse()
+	if *configFilePath == "" {
+		// 如果没有指定配置文件
+		if *listenIp == "" || *dnsFilePath == "" || *listenPort == -1 {
+			log.Fatal("未指定配置文件!")
+			return
+		} else {
+			config.DnsFile = *dnsFilePath
+			config.Port = *listenPort
+			config.LinstenIP = *listenIp
+		}
 
-	dnsPort := 53
-
+	} else {
+		// 检查到存在配置文件路径，那就读取配置文件
+		loadStatus := loadConfig(*configFilePath)
+		if loadStatus == false {
+			return
+		}
+	}
+	dnsFile := config.DnsFile
+	ipAddr := net.ParseIP(config.LinstenIP)
 	// 从本地文件中导入静态dns记录
 	loadLocalDnsFile(dnsFile)
 	listen, err := net.ListenUDP("udp", &net.UDPAddr{
-		IP:   net.IPv4(0, 0, 0, 0),
-		Port: dnsPort,
+		IP:   ipAddr.To4(),
+		Port: config.Port,
 	})
 	if err != nil {
-		fmt.Println("listen failed, err:", err)
+		fmt.Println("listen failed, please check Port or other issue!", err)
 		return
 	}
 
@@ -41,6 +76,10 @@ func main() {
 	authByte := []byte{0xc0, 0x0f, 0x00, 0x06, 0x00, 0x01, 0x00, 0x00, 0x00, 0xb4, 0x00, 0x41, 0x07, 0x6d, 0x61, 0x72, 0x74, 0x69, 0x6e, 0x69, 0x06, 0x64, 0x6e, 0x73, 0x70, 0x6f, 0x64, 0x03, 0x6e, 0x65, 0x74, 0x00, 0x0c, 0x66, 0x72, 0x65, 0x65, 0x64, 0x6e, 0x73, 0x61, 0x64, 0x6d, 0x69, 0x6e, 0x06, 0x64, 0x6e, 0x73, 0x70, 0x6f, 0x64, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x63, 0x4b, 0x72, 0x54, 0x00, 0x00, 0x0e, 0x10, 0x00, 0x00, 0x00, 0xb4, 0x00, 0x12, 0x75, 0x00, 0x00, 0x00, 0x00, 0xb4}
 	go checkDNS()
 	go startHttp()
+
+	log.Println("server Ip:", config.LinstenIP, ":", config.Port)
+	//log.Println("server Port:", config.Port)
+	log.Println("server local dns file path:", config.DnsFile)
 	for {
 
 		//每个DNS数据包限制在512字节之内(防止IP包超过MTU被碎片化)，
@@ -48,6 +87,7 @@ func main() {
 		//fmt.Println("dns服务开启成功！")
 		//fmt.Println("源：", hex.EncodeToString(data[:n]))
 		var end int
+
 		for end = 12; end < 512; end++ {
 			if int(data[end]) == 0 {
 				break
@@ -230,7 +270,6 @@ func main() {
 				var ipTmp [16]byte
 				dnsData := A{domain: domainLable1, ip: [16]byte{0x00, 0x01, 0x02, 0x03}, ipType: 4, ttl: 1}
 				if data[end+7] == 0x04 {
-
 					for i := 0; i < 4; i++ {
 						dnsData.ip[i] = data[end+8+i]
 						ipTmp[i] = data[end+8+i]

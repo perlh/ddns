@@ -24,6 +24,7 @@ func add(DomainTypeA *[]A, data A) bool {
 	*DomainTypeA = append(*DomainTypeA, A{domain: data.domain, ip: data.ip, ipType: data.ipType, ttl: data.ttl})
 	return true
 }
+
 func del(DomainTypeA *[]A, domain string) bool {
 	mu.Lock()
 	defer mu.Unlock()
@@ -41,6 +42,7 @@ func del(DomainTypeA *[]A, domain string) bool {
 	*DomainTypeA = tmp1
 	return true
 }
+
 func updateTtl(DomainTypeA *[]A, domain string, isAdd bool) bool {
 	mu.Lock()
 	defer mu.Unlock()
