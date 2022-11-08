@@ -49,7 +49,13 @@ func updateTtl(DomainTypeA *[]A, domain string, isAdd bool) bool {
 		if (*DomainTypeA)[i].domain == domain && (*DomainTypeA)[i].dnsType == 0 {
 			//fmt.Println("xxxxx")
 			if isAdd {
-				(*DomainTypeA)[i].ttl++
+
+				if (*DomainTypeA)[i].ttl < 5 {
+					/*
+						limit add many
+					*/
+					(*DomainTypeA)[i].ttl++
+				}
 			} else {
 				(*DomainTypeA)[i].ttl--
 			}
