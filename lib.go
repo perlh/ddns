@@ -3,8 +3,13 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"log"
+	"math/rand"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
+	"time"
 )
 
 // 检查域名是否在域名表中
@@ -55,6 +60,26 @@ func convertHex2String(domainHex []byte) string {
 	return returnDomain
 }
 
+// 适配获取dns地址
+func convertHex2String2(domainHex []byte) string {
+	//fmt.Println("---")
+	length := len(domainHex)
+	var returnDomain string
+	//tmp_lable := ""
+	for i := 0; i < length; i++ {
+		if int(domainHex[i]) > 10 {
+			returnDomain = returnDomain + string(domainHex[i])
+		}
+		if int(domainHex[i]) < 10 {
+			returnDomain = returnDomain + "."
+			//tmp_lable = ""
+		}
+
+	}
+	//fmt.Println(returnDomain)
+	return returnDomain
+}
+
 func getIpv4(ipv4Byte []byte) string {
 	ipv4 := ""
 	for index, char2 := range ipv4Byte[0:4] {
@@ -80,4 +105,22 @@ func getIpv6(ipv6Byte []byte) string {
 	}
 
 	return net.ParseIP(ipv6).To16().String()
+}
+
+// 获取当前执行程序所在的绝对路径
+func getCurrentAbPathByExecutable() string {
+	exePath, err := os.Executable()
+	if err != nil {
+		log.Fatal(err)
+	}
+	res, _ := filepath.EvalSymlinks(filepath.Dir(exePath))
+	return res
+}
+
+// 得到随机数
+func genRandomInt(num int) string {
+
+	rand.Seed(time.Now().UnixNano())
+	num1 := rand.Intn(num)
+	return strconv.Itoa(num1)
 }

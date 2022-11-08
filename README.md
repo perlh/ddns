@@ -1,39 +1,48 @@
-# ddns-server
-- dns服务器
-- ddns服务器端
+# 2022/11/7 这是一次全新的更新
+## 更新内容
+1. 将客户端和服务器端整合到一个项目中来
+2. 支持服务器分配子域名给客户端，避免了域名冲突（当然客户端依然可以在本地指派指定域名）
+3. 丰富了使用文档
+# ddns
 - DDNS（Dynamic Domain Name Server，动态域名服务）是将用户的动态IP地址映射到一个固定的域名解析服务上，用户每次连接网络的时候客户端程序就会通过信息传递把该主机的动态IP地址传送给位于服务商主机上的服务器程序
-  
+
 ## 实现的功能
 
-- 自动更新域名解析到本机IP,每隔5min向dns服务器同步IP信息
-- 支持A记录（IPV4）和AAAA记录（IPV6）
-- 每条记录将设置计时器，当客户端与DNS服务器长期（10min）未同步时，将删除客户端的DNS记录。
+- 自动更新域名解析到本机IP,每隔一个时间间隔（配置文件可调）向dns服务器同步IP信息
+- 目前支持`A记录`（ipv4）和`AAAA记录`（ipv6）
+- 每条记录将设置计时器，当客户端与dns
+服务器长期未同步时，dns服务器将删除客户端的dns记录。
 - 支持查看dns记录表
+    > http://dns-ip:http-port/dns
 - 支持dnslog功能
+    > http://dns-ip:http-port/dnslog
 - 支持dns记录解析
 
-## 使用
-1. 首先得拥有自己的域名
-2. 首先在云解析DNS上添加NS记录（比如d.hsm.cool 服务器指向www.hsm.cool）
-3. 在服务区上运行`ddns服务器程序` 
-``` bash
-hsm@orangepizero2 ~>  ./ddns -d dns.txt -ip 0.0.0.0 -port 8050 
-hsm@orangepizero2 ~> # or
-hsm@orangepizero2 ~>  ./ddns -c ddns.conf
+
+
+
+
+# 编译ddns
+```bash
+cd ddns
+go build
 ```
 
-配置文件 `ddns.conf`
-```text
-dns_file=dns.txt
-listen_ip=0.0.0.0
-listen_port=8050
-```
->ddns.conf不能有注释和空格
+# server
+1. 购买域名
+2. 在云解析DNS上添加NS记录
+3. 编辑配置文件`ddns.conf`
+4. 在服务区上运行`ddns`
+  ``` bash
+./ddns -m server -c ddns.conf
+  ```
 
-
-## 为ddns创建service
+### 为ddns创建service
 
 `sudo vim /usr/systemd/system/ddns.service`
+
+根据自己ddns的路径修改`ExecStart= /opt/ddns/bin/ddns -m server -c /opt/ddns/etc/ddns.conf
+`
 ```text
 [Unit]
 Description=DDNS service
@@ -44,26 +53,28 @@ Type=simple
 User=nobody
 Restart=on-failure
 RestartSec=5s
-ExecStart= /opt/ddns/bin/ddns-server-linux-amd -c /opt/ddns/etc/ddns.conf
+ExecStart= /opt/ddns/bin/ddns -m server -c /opt/ddns/etc/ddns.conf
 LimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
 ```
 **注意修改**
-> ExecStart= /opt/ddns/bin/ddns-server-linux-amd -c /opt/ddns/etc/ddns.conf
 
 
 **重载配置并且启动ddns服务**
 ```bash
-root@VM-12-8-ubuntu:/opt/ddns/bin# systemctl daemon-reload
-root@VM-12-8-ubuntu:/opt/ddns/bin# systemctl start ddns.service
-root@VM-12-8-ubuntu:/opt/ddns/bin# systemctl status ddns.service
+systemctl daemon-reload
+systemctl start ddns.service
+systemctl status ddns.service
 ```
 
-## 例子
-``` bash
-hsm@VM-12-8-ubuntu /o/d/bin> ./ddns -c ddns.conf
-2022/11/07 19:56:47 ddns server:0.0.0.0:8050
-2022/11/07 19:56:47 server local dns file path: dns.txt
+# client
+编辑client配置文件
+```bash
+vim ddns-client.conf
+```
+运行ddns client
+```bash
+./ddns -m client -c ddns-client.conf
 ```

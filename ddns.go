@@ -21,7 +21,8 @@ var DomainTypeA []A
 func add(DomainTypeA *[]A, data A) bool {
 	mu.Lock()
 	defer mu.Unlock()
-	*DomainTypeA = append(*DomainTypeA, A{domain: data.domain, ip: data.ip, ipType: data.ipType, ttl: data.ttl})
+	//fmt.Println("rss:", data)
+	*DomainTypeA = append(*DomainTypeA, A{domain: data.domain, ip: data.ip, ipType: data.ipType, ttl: data.ttl, dnsType: data.dnsType})
 	return true
 }
 
@@ -30,10 +31,6 @@ func del(DomainTypeA *[]A, domain string) bool {
 	defer mu.Unlock()
 	var tmp1 []A
 	for i := 0; i < len(*DomainTypeA); i++ {
-		if (*DomainTypeA)[i].dnsType == 0 {
-			// 本地dns记录，不能删除
-			return false
-		}
 		if (*DomainTypeA)[i].domain == domain {
 			continue
 		}
@@ -46,39 +43,44 @@ func del(DomainTypeA *[]A, domain string) bool {
 func updateTtl(DomainTypeA *[]A, domain string, isAdd bool) bool {
 	mu.Lock()
 	defer mu.Unlock()
-	var tmp1 []A
+	//var tmp1 []A
+
 	for i := 0; i < len(*DomainTypeA); i++ {
-		if (*DomainTypeA)[i].domain == domain {
-			if (*DomainTypeA)[i].dnsType == 0 {
-				// 本地dns记录，不用ttl
-				return false
-			}
+		if (*DomainTypeA)[i].domain == domain && (*DomainTypeA)[i].dnsType == 0 {
+			//fmt.Println("xxxxx")
 			if isAdd {
 				(*DomainTypeA)[i].ttl++
 			} else {
 				(*DomainTypeA)[i].ttl--
 			}
-
-			tmp1 = append(tmp1, (*DomainTypeA)[i])
-			continue
+			return true
 		}
-		tmp1 = append(tmp1, (*DomainTypeA)[i])
 	}
-	*DomainTypeA = tmp1
+
 	return true
 }
+
 func checkDNS() {
-	d := time.NewTicker(time.Minute * 5)
+	//a := 4
+	//config.DnsUpdateTime = 1
+	//v1:= time.Minute * config.DnsUpdateTime
+
+	d := time.NewTicker(time.Duration(config.DnsUpdateTime) * time.Second)
+
 	for {
-		for _, data := range DomainTypeA {
+
+		recodeA := DomainTypeA
+		//fmt.Println(recodeA)
+		for _, data := range recodeA {
 			if data.dnsType == 1 {
 				// 本地dns记录不检查
 				continue
 			}
-
+			//fmt.Println("检查这条dns是否存活")
 			// 检查这条dns是否存活
 			if data.ttl <= 0 {
 				// 如果这条域名长期不更新，那么删除这条记录
+				//fmt.Println("delete", data.domain)
 				del(&DomainTypeA, data.domain)
 			} else {
 				// 存活的话，让其ttl减1
