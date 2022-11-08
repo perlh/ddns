@@ -50,7 +50,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=nobody
+User=root
 Restart=on-failure
 RestartSec=5s
 ExecStart= /opt/ddns/bin/ddns -m server -c /opt/ddns/etc/ddns.conf
@@ -65,9 +65,14 @@ WantedBy=multi-user.target
 **重载配置并且启动ddns服务**
 ```bash
 systemctl daemon-reload
-systemctl start ddns.service
-systemctl status ddns.service
+systemctl start ddns-client-arm.service
+systemctl status ddns-client-arm.service
 ```
+
+## check run
+
+> http://ip:port/
+
 
 # client
 编辑client配置文件
