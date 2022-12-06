@@ -1,2 +1,0 @@
-A dns.x.com 192.168.1.1
-AAAA 6.x.com fe80::b8ec:6fff:fe7a:b189

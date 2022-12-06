@@ -1,417 +1,536 @@
 package main
 
 import (
-	"encoding/binary"
-	"encoding/hex"
+	"bufio"
+	"errors"
 	"fmt"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"log"
 	"net"
-	"strconv"
+	"os"
+	"strings"
+	"sync"
 	"time"
 )
 
-// UDP server端
-func server() {
+// 互斥变量
+var mu sync.RWMutex
+var databases Databases
 
-	// 配置dns默认53端口
-	config.DNS_Port = 53
-	if *configFilePath == "" {
-		// 如果没有指定配置文件
-		log.Fatal("未指定配置文件!")
+type User struct {
+	UserId   int    `json:"user_id"`
+	UserName string `json:"user_name"`
+	Password string `json:"password"`
+	Token    string `json:"token"`
+}
+
+type Users struct {
+	data []User
+}
+
+func (u *Users) add(user User) (err error) {
+	// 检查是否存在这个用户
+	_, err1 := u.searchByUsername(user.UserName)
+	if err1 == nil {
+		// 如果查到了这个用户，那么就不能添加这个用户
+		return errors.New("用户已存在")
+	}
+
+	//查找最后的那个id
+	user.UserId = 0
+	if len(u.data) != 0 {
+		user.UserId = u.data[len(u.data)-1].UserId + 1
+	}
+	u.data = append(u.data, user)
+	return err
+}
+
+func (u *Users) del(user User) {
+	var tmp []User
+	if user.UserId == 0 {
+		// 不能删除本地用户
 		return
-
-	} else {
-		// 检查到存在配置文件路径，那就读取配置文件
-		loadStatus := loadConfig(*configFilePath)
-		if loadStatus == false {
-			return
+	}
+	//var tmpTable Table
+	for _, value := range u.data {
+		if value.UserId != user.UserId {
+			tmp = append(tmp, value)
 		}
 	}
-	dnsFile := config.DnsFile
-	ipAddr := net.ParseIP(config.LinstenIP)
-	// 从本地文件中导入静态dns记录
-	loadLocalDnsFile(dnsFile)
-	listen, err := net.ListenUDP("udp", &net.UDPAddr{
-		IP:   ipAddr.To4(),
-		Port: config.DNS_Port,
-	})
-	if err != nil {
-		fmt.Println("listen failed, please check Port or other issue!", err)
-		return
+	u.data = tmp
+}
+
+func (u *Users) update(user User) {
+	var tmp []User
+	//var tmpTable Table
+	for _, value := range u.data {
+		if value.UserId == user.UserId {
+
+			tmp = append(tmp, user)
+			continue
+		}
+		tmp = append(tmp, value)
+	}
+	u.data = tmp
+}
+func (u *Users) searchByToken(Token string) (user User, err error) {
+	for _, value := range u.data {
+		if value.Token == Token {
+			return value, nil
+			//continue
+		}
+	}
+	return user, errors.New("no result！")
+}
+
+// searchByUsername 如果得到结果就返回nil，否则err等于errors.New("no result！")
+func (u *Users) searchByUsername(username string) (user User, err error) {
+	for _, value := range u.data {
+		if value.UserName == username {
+			return value, nil
+			//continue
+		}
+	}
+	return user, errors.New("no result！")
+}
+
+var users Users
+
+type Table struct {
+	dnsType         string
+	ipv4            net.IP
+	ipv6            net.IP
+	cname           string
+	domain          string
+	ttl             int
+	isLocalDNSTable bool
+	ownID           int
+}
+
+type Databases struct {
+	data []Table
+}
+
+func (databases *Databases) del(table Table) (err error) {
+	mu.Lock()
+	defer mu.Unlock()
+	// 定义一个临时变量来保存数据
+	var tmp []Table
+	// 将数据保存保存在tmp中
+	for i := 0; i < len(databases.data); i++ {
+		if databases.data[i].domain == table.domain {
+			continue
+		}
+		tmp = append(tmp, databases.data[i])
+	}
+	databases.data = tmp
+	return nil
+}
+
+func (databases *Databases) add(table Table) (err error) {
+	mu.Lock()
+	defer mu.Unlock()
+	// 检查域名是否已经存在
+	for _, table2 := range databases.data {
+		if table2.domain == table.domain {
+			return errors.New("这个域名已经存在，无法再添加")
+		}
+	}
+	databases.data = append(databases.data, table)
+	return nil
+}
+
+// update 通过domain更新整个表
+func (databases *Databases) update(table Table) (err error) {
+
+	// 查一下这个域名是否存在
+	resultTable, err1 := databases.searchDNS(table.domain)
+	if err1 != nil {
+		// 如果不存在，那么就添加
+		err = databases.add(table)
+		if err != nil {
+			return errors.New("更新失败")
+		}
+		return nil
+	} else {
+		if resultTable.ownID != table.ownID {
+			return errors.New("越权更新")
+		}
+		// 查看这个domain是否属于这个用户
+		mu.Lock()
+		defer mu.Unlock()
+		//fmt.Println("rss:", data)
+
+		// 将数据保存保存在tmp中
+		for i := 0; i < len(databases.data); i++ {
+			if databases.data[i].domain == table.domain {
+				databases.data[i] = table
+			}
+		}
+		return nil
 	}
 
-	defer func(listen *net.UDPConn) {
-		err := listen.Close()
+}
+
+// ASearch 查找A记录，如果得到结果，那么err为空
+func (databases *Databases) searchDNS(domain string) (table Table, err error) {
+	mu.Lock()
+	defer mu.Unlock()
+	// 遍历一下数据表
+	for _, table := range databases.data {
+		if table.domain == domain {
+			return table, nil
+		}
+	}
+	return table, errors.New("no result")
+}
+
+// update 通过domain更新整个表
+func (databases *Databases) updateTTL(table Table) (err error) {
+	mu.Lock()
+	defer mu.Unlock()
+	//fmt.Println("rss:", data)
+
+	// 将数据保存保存在tmp中
+	for i := 0; i < len(databases.data); i++ {
+		if databases.data[i].domain == table.domain {
+			// 防止溢出
+			if databases.data[i].ttl > 5 {
+				continue
+			}
+			databases.data[i].ttl = databases.data[i].ttl - 1
+		}
+	}
+	return nil
+}
+
+// ringUpdateDNS 每隔server.screenTime秒使ttl减1，当ttl减到负数的时候，就将这条记录删掉
+func ringUpdateDNS() {
+	d := time.NewTicker(time.Duration(server.screenTime) * time.Second)
+	for {
+		var tmp Databases
+		tmp = databases
+
+		//fmt.Println(recodeA)
+		if server.debug {
+			log.Println("ringUpdateDNS")
+		}
+		for _, table := range tmp.data {
+			if server.debug {
+				log.Println("ringUpdateDNS", table.domain, table.dnsType, table.ipv4, table.ipv6, table.cname, table.ttl, table.ownID)
+			}
+			// 本地dns记录不检查
+			if table.isLocalDNSTable == true {
+				continue
+			}
+
+			if table.ttl <= 0 {
+				// 如果这条域名长期不更新，那么删除这条记录
+				//fmt.Println("delete", data.domain)
+				err := databases.del(table)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+			} else {
+				err := databases.updateTTL(table)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+			}
+		}
+		if server.debug {
+			log.Println("ringUpdateDNS")
+		}
+		<-d.C
+	}
+
+}
+
+func initDnsServer() {
+	// 加载本地dns文件
+	if server.debug == true {
+		log.Println("initDnsServer")
+	}
+	if server.dnsFile == "" {
+		log.Println("Waring: 未找到本地DNS文件表", server.dnsFile)
+		return
+	}
+	err := loadLocalDnsFile(server.dnsFile)
+	if err != nil {
+		log.Println("加载dns本地文件失败！")
+	}
+
+}
+
+func loadLocalDnsFile(fileName string) (err error) {
+	f, err := os.Open(fileName)
+	if err != nil {
+		//
+		//log.Println("未找到dns记录文件!")
+		//CreateDnsFile(fileName)
+		//log.Println("自动创建dns记录文件：/%v\n", fileName)
+		return errors.New("找不到这个路径下的DNS文件")
+	}
+	defer func(f *os.File) {
+		err := f.Close()
 		if err != nil {
 
 		}
-	}(listen)
-	var data [512]byte
+	}(f)
 
-	// 设置一个定时器
-	// auth
-	authByte := []byte{0xc0, 0x0f, 0x00, 0x06, 0x00, 0x01, 0x00, 0x00, 0x00, 0xb4, 0x00, 0x41, 0x07, 0x6d, 0x61, 0x72, 0x74, 0x69, 0x6e, 0x69, 0x06, 0x64, 0x6e, 0x73, 0x70, 0x6f, 0x64, 0x03, 0x6e, 0x65, 0x74, 0x00, 0x0c, 0x66, 0x72, 0x65, 0x65, 0x64, 0x6e, 0x73, 0x61, 0x64, 0x6d, 0x69, 0x6e, 0x06, 0x64, 0x6e, 0x73, 0x70, 0x6f, 0x64, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x63, 0x4b, 0x72, 0x54, 0x00, 0x00, 0x0e, 0x10, 0x00, 0x00, 0x00, 0xb4, 0x00, 0x12, 0x75, 0x00, 0x00, 0x00, 0x00, 0xb4}
-	go checkDNS()
-	go startHttp()
-	fmt.Println("******* ddns server mode *******")
-	log.Printf("ddns server:%v:%v \n", config.LinstenIP, config.DNS_Port)
-	log.Printf("ddns log web server:http://%v:%v \n", config.LinstenIP, config.HTTP_Port)
-	log.Printf("dns update cron time %v :\n", config.DnsUpdateTime)
-	log.Println("server config file path:", *configFilePath)
-	log.Println("server local dns recode file path:", config.DnsFile)
-	fmt.Println("******* ddns server mode *******")
-	fmt.Println("")
-	fmt.Println("")
-	log.Println("dns service success run...")
-	fmt.Println("")
-	for {
+	// 以这个文件为参数，创建一个 scanner
+	s := bufio.NewScanner(f)
 
-		//每个DNS数据包限制在512字节之内(防止IP包超过MTU被碎片化)，
-		n, addr, err := listen.ReadFromUDP(data[:]) // 接收数据
-		//fmt.Println("dns服务开启成功！")
-		//fmt.Println("源：", hex.EncodeToString(data[:n]))
-		var end int
+	// 扫描每行文件，按行读取
 
-		for end = 12; end < 512; end++ {
-			if int(data[end]) == 0 {
+	for s.Scan() {
+		// 过滤注释
+		if s.Text() == "" || s.Text()[0] == '#' {
+			continue
+		}
+		var tmpTable Table
+		tmpTable.isLocalDNSTable = true
+		recode := strings.Split(s.Text(), " ")
+		if len(recode) != 3 {
+			log.Println("dns配置文件错误！")
+		}
+		if server.debug {
+			log.Println("loadLocalDnsFile", recode)
+		}
+		//fmt.Println(recode, recode[0], recode[1], recode[2])
+		switch recode[0] {
+		case "A":
+			{
+
+				tmpTable.domain = recode[1]
+				tmpTable.ownID = 0
+
+				//var tmpByte16 [16]byte
+				ipv4 := net.ParseIP(recode[2])
+				tmpTable.ipv4 = ipv4.To4()
+				//tmpTable.
+				tmpTable.dnsType = "A"
+				//fmt.Println(tmpTable)
+				//fmt.Println(DomainTypeA)
+				err := databases.add(tmpTable)
+				//logs.Println("err")
+				//fmt.Println(err, "err")
+				if err != nil {
+					panic(err)
+					return err
+				}
 				break
 			}
-		}
-		Domain := data[12:end]
-		// dnslog
-		domainLable := convertHex2String(Domain)
-
-		domainLable += "\n"
-
-		dnslogRecode = append(dnslogRecode, domainLable)
-		DnsType := binary.BigEndian.Uint16(data[end+1 : end+3])
-		if DnsType == 0x0001 {
-			// A类型
-			isSuccess := false
-			domainLable := convertHex2String(Domain)
-			for j := 0; j < len(DomainTypeA); j++ {
-				// 寻找域名
-				if domainLable == DomainTypeA[j].domain {
-					// FLAG
-					data[2] = 0x81
-					data[3] = 0x80
-					data[6] = 0x00
-					data[7] = 0x01
-					data[end+5] = 0xc0
-					data[end+6] = 0x0c
-					// type
-					data[end+7] = 0x00
-					data[end+8] = 0x01 // A
-					// class
-					data[end+9] = 0x00
-					data[end+10] = 0x01
-
-					// time
-					data[end+11] = 0x00
-					data[end+12] = 0x00
-					data[end+13] = 0x00
-					data[end+14] = 0x2f
-					if DomainTypeA[j].ipType == 4 {
-						// data length
-						data[end+15] = 0x00
-						data[end+16] = 0x04
-						// ipv4
-						for i := 0; i < 4; i++ {
-							data[end+17+i] = DomainTypeA[j].ip[i]
-						}
-						_, err = listen.WriteToUDP(data[:end+21], addr) // 发送数据
-						if err != nil {
-							fmt.Println("err:", err)
-							continue
-						}
-
-						fmt.Println(time.Now().Format("2006/1/2 15:04:05"), addr, "查询DNS成功", domainLable, getIpv4(data[end+17:end+21]))
-						// 查询成功，退出循环
-						isSuccess = true
-						break
-					}
-
-				}
-
-			}
-			if isSuccess == true {
-				continue
-			}
-		}
-		if DnsType == 0x001c {
-			// AAAA类型
-			// A类型
-			isSuccessAAAA := false
-			domainLable := convertHex2String(Domain)
-			for j := 0; j < len(DomainTypeA); j++ {
-				if domainLable == DomainTypeA[j].domain {
-					// 如果匹配到了
-					if DomainTypeA[j].ipType == 6 {
-						// FLAG
-						data[2] = 0x81
-						data[3] = 0x80
-						//
-						data[6] = 0x00
-						data[7] = 0x01
-
-						data[end+5] = 0xc0
-						data[end+6] = 0x0c
-						// type
-						data[end+7] = 0x00
-						data[end+8] = 0x1c // AAAA
-						// class
-						data[end+9] = 0x00
-						data[end+10] = 0x01
-
-						// time
-						data[end+11] = 0x00
-						data[end+12] = 0x00
-						data[end+13] = 0x00
-						data[end+14] = 0x2f
-						// ipv6
-						// data length
-						data[end+15] = 0x00
-						data[end+16] = 0x10
-						// ipv6
-						for i := 0; i < 16; i++ {
-							data[end+17+i] = DomainTypeA[j].ip[i]
-						}
-
-						_, err = listen.WriteToUDP(data[:end+33], addr) // 发送数据
-						if err != nil {
-							fmt.Println("err:", err)
-							continue
-						}
-						fmt.Println(time.Now().Format("2006/1/2 15:04:05"), addr, "查询DNS成功!", domainLable, getIpv6(data[end+17:end+33]))
-						isSuccessAAAA = true
-						break
-					}
-				}
-			}
-			if isSuccessAAAA == true {
-				continue
-			}
-
-		}
-		// 控制记录
-		if DnsType == 0x00ee {
-			isSuccessControl := false
-			// 管理域名
-			control := data[end+5]
-			// 更新ip
-			if control == 0x01 {
-				domainLable := convertHex2String(Domain)
-				if !checkDomainExit(DomainTypeA, domainLable) {
-					_, err = listen.WriteToUDP([]byte{0x01}, addr) // 发送数据
-					if err != nil {
-						fmt.Println("err:", err)
-						continue
-					}
-					continue
-				}
-				domainLable1 := convertHex2String(Domain)
-				for j := 0; j < len(DomainTypeA); j++ {
-					if domainLable1 == DomainTypeA[j].domain {
-						/*
-
-						 */
-						updateTtl(&DomainTypeA, domainLable1, true)
-						if data[end+7] == 0x04 {
-							for i := 0; i < 4; i++ {
-								DomainTypeA[j].ip[i] = data[end+8+i]
-							}
-							isSuccessControl = true
-							if debug {
-								fmt.Println(time.Now().Format("2006/1/2 15:04:05"), addr, "更新DNS记录成功，域名：", domainLable1, "新IP:", getIpv4(data[end+8:end+12]))
-							}
-						} else if data[end+7] == 0x16 {
-							for i := 0; i < 16; i++ {
-								DomainTypeA[j].ip[i] = data[end+8+i]
-							}
-							ipv6 := ""
-							for index, char1 := range hex.EncodeToString(data[end+8 : end+24]) {
-								ipv6 += string(char1)
-								//fmt.Println(index)
-								if index%4 == 3 && index != 31 {
-
-									ipv6 += ":"
-								}
-							}
-							//fmt.Println(ipv6)
-							isSuccessControl = true
-							if debug {
-								fmt.Println(time.Now().Format("2006/1/2 15:04:05"), addr, "更新DNS记录成功,域名:", domainLable1, ",", "IP:", net.ParseIP(ipv6).To16())
-							}
-						}
-
-						_, err = listen.WriteToUDP([]byte{0x00}, addr) // 发送数据
-						if err != nil {
-							fmt.Println("err:", err)
-							continue
-						}
-						continue
-					}
-				}
-
-			}
-			// 添加记录
-			if control == 0x02 {
-				//fmt.Println("add data")
-				domainLable1 := convertHex2String(Domain)
-				var ipTmp [16]byte
-				dnsData := A{domain: domainLable1, ip: [16]byte{0x00, 0x01, 0x02, 0x03}, ipType: 4, ttl: 1}
-				if data[end+7] == 0x04 {
-					for i := 0; i < 4; i++ {
-						dnsData.ip[i] = data[end+8+i]
-						ipTmp[i] = data[end+8+i]
-					}
-
-					checkDnsAdd := checkDomainExitAndIpNotExit(DomainTypeA, domainLable1, ipTmp)
-					if checkDnsAdd == 0 {
-						// 域名不在表中，ip也不在表中
-						dnsData.dnsType = 0
-						add(&DomainTypeA, dnsData)
-
-					} else if checkDnsAdd == 1 {
-						// 域名在表中，ip不在表中
-						//无法添加记录
-						_, err = listen.WriteToUDP([]byte{0x01}, addr) // 添加失败
-						if err != nil {
-							fmt.Println("err:", err)
-						}
-						continue
-					} else if checkDnsAdd == 2 {
-						updateTtl(&DomainTypeA, domainLable1, true)
-					}
-
-					isSuccessControl = true
-					if debug {
-						fmt.Println(time.Now().Format("2006/1/2 15:04:05"), addr, "添加解析记录成功，域名：", domainLable1, "新IP：", getIpv4(data[end+8:end+12]))
-					}
-				} else if data[end+7] == 0x16 {
-					for i := 0; i < 16; i++ {
-						dnsData.ip[i] = data[end+8+i]
-						ipTmp[i] = data[end+8+i]
-					}
-					//dnsData.ipType = 6
-					//DomainTypeA = append(DomainTypeA, dnsData)
-					checkDnsAdd := checkDomainExitAndIpNotExit(DomainTypeA, domainLable1, ipTmp)
-					fmt.Println("checkDnsAdd", checkDnsAdd)
-					if checkDnsAdd == 0 {
-						// 域名不在表中，ip也不在表中
-						dnsData.ipType = 6
-						DnsType = 0
-						add(&DomainTypeA, dnsData)
-					} else if checkDnsAdd == 1 {
-						// 域名在表中，ip不在表中
-						//无法添加记录
-						//fmt.Println("11111111")
-						_, err = listen.WriteToUDP([]byte{0x01}, addr) // 添加失败
-						if err != nil {
-							fmt.Println("err:", err)
-						}
-						continue
-					} else if checkDnsAdd == 2 {
-						updateTtl(&DomainTypeA, domainLable1, true)
-					}
-
-					isSuccessControl = true
-					//add(&DomainTypeA, dnsData)
-					if debug {
-						fmt.Println(time.Now().Format("2006/1/2 15:04:05"), addr, "添加DNS记录成功，域名：", domainLable1, ",", "IP：", getIpv6(data[end+8:end+24]))
-					}
-				}
-				// 添加成功
-				_, err = listen.WriteToUDP([]byte{0x00}, addr) // 发送数据
+		case "AAAA":
+			{
+				tmpTable.domain = recode[1]
+				ipv4 := net.ParseIP(recode[2])
+				tmpTable.ipv6 = ipv4.To16()
+				tmpTable.dnsType = "AAAA"
+				err := databases.add(tmpTable)
 				if err != nil {
-					fmt.Println("err:", err)
-					continue
+					return err
 				}
-				continue
-
+				break
 			}
-			// 删除记录
-			if control == 0x03 {
-				//var tmp1 []A
-				domainLable1 := convertHex2String(Domain)
-				fmt.Println(domainLable1, checkDomainExit(DomainTypeA, domainLable1))
-				if !checkDomainExit(DomainTypeA, domainLable1) {
-					_, err = listen.WriteToUDP([]byte{0x01}, addr) // 发送数据
-					if err != nil {
-						fmt.Println("err:", err)
-						continue
-
-					}
-					continue
-				}
-				// 通过指定域名删除dns记录
-				del(&DomainTypeA, domainLable1)
-				_, err = listen.WriteToUDP([]byte{0x00}, addr) // 删除成功
+		case "CNAME":
+			{
+				tmpTable.domain = recode[1]
+				tmpTable.cname = recode[2]
+				tmpTable.dnsType = "CNAME"
+				err := databases.add(tmpTable)
 				if err != nil {
-					fmt.Println("err:", err)
-					continue
-
+					return err
 				}
-				isSuccessControl = true
-				//fmt.Println(time.Now().Format("2006/1/2 15:04:05"),)
-				if debug {
-					log.Println(addr, "删除DNS解析记录成功：", domainLable1)
-				}
-				continue
+				break
 			}
-			// 查找记录
-			if control == 0x04 {
-				//log.Println(addr.String() + "：向服务器发送DNS查询请求成功!\n")
-				if debug {
-					fmt.Printf(time.Now().Format("2006/1/2 15:04:05") + " " + addr.String() + " 查询DNS解析记录成功!\n")
+		default:
+			break
 
-				}
-				for _, content := range DomainTypeA {
-					if content.ipType == 4 {
-						ipv4 := getIpv4(content.ip[0:4])
-						fmt.Printf("\t\t" + content.domain + "  " + ipv4 + " " + strconv.Itoa(content.ttl) + "," + strconv.Itoa(content.dnsType) + "\n")
-					} else if content.ipType == 6 {
-						ipv6 := getIpv6(content.ip[0:])
-						fmt.Printf("\t\t" + content.domain + "  " + ipv6 + " " + strconv.Itoa(content.ttl) + "," + strconv.Itoa(content.dnsType) + "\n")
-					}
-					//fmt.Printf("   查询DNS解析记录成功：%s,%s\n", content.domain, content.ip)
-				}
-				//fmt.Println(time.Now(), addr, "查询DNS解析记录成功：", DomainTypeA)
-				isSuccessControl = true
-				_, err = listen.WriteToUDP([]byte{0x00}, addr) // 发送数据
-				if err != nil {
-					fmt.Println("err:", err)
-					continue
-
-				}
-				continue
-			}
-
-			if isSuccessControl == true {
-				continue
-			} else {
-				// 其他错误
-				_, err = listen.WriteToUDP([]byte{0x01}, addr) // 发送数据
-				if err != nil {
-					fmt.Println("err:", err)
-					continue
-
-				}
-				continue
-			}
 		}
-		data[2] = 0x81
-		data[3] = 0x83
-		for index, b := range authByte {
-			data[n+index] = b
+		if server.debug {
+			log.Println(recode)
 		}
-		_, err = listen.WriteToUDP(data[:n+len(authByte)], addr) // 发送数据
+
+	}
+	//fmt.Println(DomainTypeA)
+	err = s.Err()
+	if err != nil {
+		panic(err)
+		return err
+	}
+	return nil
+}
+
+func CreateDnsFile(filePath string) bool {
+	file, err := os.Create(filePath)
+	if err != nil {
+		fmt.Println(err)
+	}
+	//file.Close()
+	// 关流(不关流会长时间占用内存)
+	defer func(file *os.File) {
+		err := file.Close()
 		if err != nil {
-			fmt.Println("err:", err)
+
 		}
-		//if debug {
-		fmt.Println(time.Now().Format("2006/1/2 15:04:05"), addr, "未找到DNS记录", convertHex2String(Domain))
-		//}
+	}(file)
+	return true
+}
+
+func serverDNS() {
+	//
+	//records = map[string]string{
+	//	"google.com": "216.58.196.142",
+	//	"amazon.com": "176.32.103.205",
+	//}
+
+	//Listen on UDP Port
+	addr := net.UDPAddr{
+		Port: server.dnsPort,
+		IP:   net.ParseIP(server.listenIP),
+	}
+	u, err := net.ListenUDP("udp", &addr)
+	if err != nil {
+		panic(err)
+		return
 	}
 
+	log.Println("listen udp ", addr.String())
+	// Wait to get request on that port
+	for {
+		tmp := make([]byte, 1024)
+		_, addr, _ := u.ReadFrom(tmp)
+		clientAddr := addr
+		//logs.Println(addr)
+		packet := gopacket.NewPacket(tmp, layers.LayerTypeDNS, gopacket.Default)
+		dnsPacket := packet.Layer(layers.LayerTypeDNS)
+		tcp, _ := dnsPacket.(*layers.DNS)
+		serveDNS(u, clientAddr, tcp)
+	}
+}
+
+func serveDNS(u *net.UDPConn, clientAddr net.Addr, request *layers.DNS) {
+	replyMess := request
+	var dnsAnswer layers.DNSResourceRecord
+	dnsAnswer.Type = layers.DNSTypeA
+	//var ip string
+	var err error
+	log.Println(clientAddr, "query:", string(request.Questions[0].Name))
+	//var table Table
+
+	table, err := databases.searchDNS(string(request.Questions[0].Name))
+	if err != nil {
+
+		//Todo: Log no data present for the IP and handle:todo
+	}
+
+	if table.dnsType == "A" {
+		dnsAnswer.Type = layers.DNSTypeA
+		dnsAnswer.IP = table.ipv4
+		dnsAnswer.Name = []byte(request.Questions[0].Name)
+		//fmt.Println(request.Questions[0].Name)
+		dnsAnswer.Class = layers.DNSClassIN
+		replyMess.QR = true
+		replyMess.ANCount = 1
+		replyMess.OpCode = layers.DNSOpCodeNotify
+		replyMess.AA = true
+		replyMess.Answers = append(replyMess.Answers, dnsAnswer)
+		replyMess.ResponseCode = layers.DNSResponseCodeNoErr
+		buf := gopacket.NewSerializeBuffer()
+		opts := gopacket.SerializeOptions{} // See SerializeOptions for more details.
+		err = replyMess.SerializeTo(buf, opts)
+		if err != nil {
+			panic(err)
+		}
+		u.WriteTo(buf.Bytes(), clientAddr)
+	} else if table.dnsType == "AAAA" {
+		//a, _, _ := net.ParseCIDR(ip + "/24")
+		dnsAnswer.Type = layers.DNSTypeAAAA
+		dnsAnswer.IP = table.ipv6
+		dnsAnswer.Name = []byte(request.Questions[0].Name)
+		//fmt.Println(request.Questions[0].Name)
+		dnsAnswer.Class = layers.DNSClassIN
+		replyMess.QR = true
+		replyMess.ANCount = 1
+		replyMess.OpCode = layers.DNSOpCodeNotify
+		replyMess.AA = true
+		replyMess.Answers = append(replyMess.Answers, dnsAnswer)
+		replyMess.ResponseCode = layers.DNSResponseCodeNoErr
+		buf := gopacket.NewSerializeBuffer()
+		opts := gopacket.SerializeOptions{} // See SerializeOptions for more details.
+		err = replyMess.SerializeTo(buf, opts)
+		if err != nil {
+			panic(err)
+		}
+		u.WriteTo(buf.Bytes(), clientAddr)
+	} else if table.dnsType == "CNAME" {
+		//a, _, _ := net.ParseCIDR(ip + "/24")
+		dnsAnswer.Type = layers.DNSTypeCNAME
+		dnsAnswer.CNAME = []byte(table.cname)
+		dnsAnswer.Name = []byte(request.Questions[0].Name)
+		//fmt.Println(request.Questions[0].Name)
+		dnsAnswer.Class = layers.DNSClassIN
+		replyMess.QR = true
+		replyMess.ANCount = 1
+		replyMess.OpCode = layers.DNSOpCodeNotify
+		replyMess.AA = true
+		replyMess.Answers = append(replyMess.Answers, dnsAnswer)
+		replyMess.ResponseCode = layers.DNSResponseCodeNoErr
+		buf := gopacket.NewSerializeBuffer()
+		opts := gopacket.SerializeOptions{} // See SerializeOptions for more details.
+		err = replyMess.SerializeTo(buf, opts)
+		if err != nil {
+			panic(err)
+		}
+		u.WriteTo(buf.Bytes(), clientAddr)
+	} else {
+		//a, _, _ := net.ParseCIDR(ip + "/24")
+		dnsAnswer.Type = layers.DNSTypeA
+		dnsAnswer.IP = table.ipv4
+		dnsAnswer.Name = []byte(request.Questions[0].Name)
+		fmt.Println(request.Questions[0].Name)
+		dnsAnswer.Class = layers.DNSClassIN
+		replyMess.QR = true
+		replyMess.ANCount = 1
+		replyMess.OpCode = layers.DNSOpCodeNotify
+		replyMess.AA = true
+		replyMess.Answers = append(replyMess.Answers, dnsAnswer)
+		replyMess.ResponseCode = layers.DNSResponseCodeNXDomain
+		buf := gopacket.NewSerializeBuffer()
+		opts := gopacket.SerializeOptions{} // See SerializeOptions for more details.
+		err = replyMess.SerializeTo(buf, opts)
+		if err != nil {
+			panic(err)
+		}
+		u.WriteTo(buf.Bytes(), clientAddr)
+	}
+
+}
+
+func initServer() {
+	// 创建本地用户
+	err := users.add(User{UserName: server.user, Password: server.password})
+	//log.Println(users, err)
+	if err != nil {
+		log.Println("create account error!")
+		return
+	}
+	//log.Println("user:", users)
+	log.Println("create account:", server.user, server.password)
+	logger.Println("create account:", server.user, server.password)
+}
+
+func serverStart() {
+	initServer()
+	initDnsServer()
+	// 添加用户
+	log.Println("init dns server success ")
+	go ringUpdateDNS()
+	go serverDNS()
+	go controlServer()
+	select {}
 }
