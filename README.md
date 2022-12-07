@@ -24,7 +24,6 @@ A simple DNS server that also acts as a DDNS server
 # DDNS Server API
 
 ## POST show
-### 请求参数
 
 |名称|位置|类型|必选|说明|
 |---|---|---|---|---|
@@ -32,8 +31,6 @@ A simple DNS server that also acts as a DDNS server
 |» token|body|string| 是 |none|
 
 > 返回示例
-
-> 200 Response
 
 ```json
 {"code":200,"msg":"","data":[{"domain":"a.baidu.co,","value":"192.168.1.1","dns_type":"A","ttl":0},{"domain":"aaaa.baidu.com","value":"\u003cnil\u003e","dns_type":"A","ttl":0},{"domain":"cname.baidu.com","value":"cname.baidu.co","dns_type":"CNAME","ttl":0}]}
@@ -47,8 +44,6 @@ A simple DNS server that also acts as a DDNS server
 
 ## POST update
 
-### 请求参数
-
 |名称|位置|类型|必选|说明|
 |---|---|---|---|---|
 |body|body|object| 否 |none|
@@ -59,17 +54,12 @@ A simple DNS server that also acts as a DDNS server
 
 > 返回示例
 
-> 200 Response
-
 ```json
 {"code":200,"msg":""}
 ```
 
 
-### 返回数据结构
-
 ## POST register
-### 请求参数
 
 |名称|位置|类型|必选|说明|
 |---|---|---|---|---|
@@ -78,9 +68,8 @@ A simple DNS server that also acts as a DDNS server
 |» user|body|string| 是 |none|
 |» password|body|string| 是 |none|
 
-> 返回示例
 
-> 200 Response
+> 返回示例
 
 ```json
 {"code":200,"msg":""}
@@ -88,7 +77,6 @@ A simple DNS server that also acts as a DDNS server
 
 
 ## POST create_domain
-### 请求参数
 
 |名称|位置|类型|必选|说明|
 |---|---|---|---|---|
@@ -98,9 +86,8 @@ A simple DNS server that also acts as a DDNS server
 |» time|body|string| 是 |none|
 |» token|body|string| 是 |none|
 
-> 返回示例
 
-> 200 Response
+> 返回示例
 
 ```json
 {"code":200,"msg":""}
