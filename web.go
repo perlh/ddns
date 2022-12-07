@@ -49,7 +49,7 @@ func controlServer() {
 	http.HandleFunc("/test", test)
 
 	addr := server.listenIP + ":" + strconv.Itoa(server.listenPort)
-	log.Println("listen udp ", addr)
+	log.Println("listen http server: ", addr)
 	err := http.ListenAndServe(addr, nil)
 	if err != nil {
 		log.Fatal(err)
@@ -161,16 +161,12 @@ func ReverseByteArr(bytes []byte) []byte { //将字节的数组反转
 //就是编码的逆过程
 func Base58Decoding(str string) string { //Base58解码
 	strByte := []byte(str)
-	//fmt.Println(strByte)  //[81 101 56 68]
 	ret := big.NewInt(0)
 	for _, byteElem := range strByte {
 		index := bytes.IndexByte(base58, byteElem) //获取base58对应数组的下标
 		ret.Mul(ret, big.NewInt(58))               //相乘回去
 		ret.Add(ret, big.NewInt(int64(index)))     //相加
 	}
-	//fmt.Println(ret)  // 拿到了十进制 4612462
-	//fmt.Println(ret.Bytes())  //[70 97 110]
-	//fmt.Println(string(ret.Bytes()))
 	return string(ret.Bytes())
 }
 
@@ -190,7 +186,8 @@ func test(w http.ResponseWriter, r *http.Request) {
 	//result := currentTime.Add(m).Unix()
 	response.Msg = strconv.Itoa(int(result))
 	data, _ := json.Marshal(response)
-	_, _ = fmt.Fprintln(w, string(data))
+	_, _ = w.Write(data)
+	//_, _ = fmt.Fprintln(w, string(data))
 }
 
 func httpRegister(w http.ResponseWriter, r *http.Request) {
@@ -213,7 +210,7 @@ func httpRegister(w http.ResponseWriter, r *http.Request) {
 				response.Code = 500
 				response.Msg = "参数不能包含':'字符"
 				data, _ := json.Marshal(response)
-				_, _ = fmt.Fprintln(w, string(data))
+				_, _ = w.Write(data)
 				return
 			}
 			token := genMd5(newUsername + newPassword)
@@ -230,7 +227,7 @@ func httpRegister(w http.ResponseWriter, r *http.Request) {
 						response.UserName = newUsername
 						response.Password = newPassword
 						data, _ := json.Marshal(response)
-						_, _ = fmt.Fprintln(w, string(data))
+						_, _ = w.Write(data)
 						return
 					}
 
@@ -239,7 +236,8 @@ func httpRegister(w http.ResponseWriter, r *http.Request) {
 				response.Code = 500
 				response.Msg = "该用户被注册，请使用别的账户"
 				data, _ := json.Marshal(response)
-				_, _ = fmt.Fprintln(w, string(data))
+				_, _ = w.Write(data)
+
 				return
 			}
 			response.Token = token
@@ -249,19 +247,20 @@ func httpRegister(w http.ResponseWriter, r *http.Request) {
 			response.Code = 200
 			response.Msg = "用户注册成功"
 			data, _ := json.Marshal(response)
-			_, _ = fmt.Fprintln(w, string(data))
+			_, _ = w.Write(data)
 			return
 		}
 		response.Code = 500
 		response.Msg = "参数错误！"
 		data, _ := json.Marshal(response)
-		_, _ = fmt.Fprintln(w, string(data))
+		_, _ = w.Write(data)
 		return
 	}
 	response.Code = 500
 	response.Msg = "认证失败"
 	data, _ := json.Marshal(response)
-	_, _ = fmt.Fprintln(w, string(data))
+	//_, _ = w.Write(data)
+	_, _ = w.Write(data)
 	return
 
 }
@@ -282,7 +281,7 @@ func httpCreateDomain(w http.ResponseWriter, r *http.Request) {
 		response.Code = 500
 		response.Msg = "认证失败！"
 		data, _ := json.Marshal(response)
-		_, _ = fmt.Fprintln(w, string(data))
+		_, _ = w.Write(data)
 		return
 	}
 	if dnsType != "" || value != "" || time != "" {
@@ -291,7 +290,7 @@ func httpCreateDomain(w http.ResponseWriter, r *http.Request) {
 			response.Code = 500
 			response.Msg = "time设置错误"
 			data, _ := json.Marshal(response)
-			_, _ = fmt.Fprintln(w, string(data))
+			_, _ = w.Write(data)
 			return
 		}
 		var table Table
@@ -318,7 +317,7 @@ func httpCreateDomain(w http.ResponseWriter, r *http.Request) {
 			response.Code = 500
 			response.Msg = "dnsType设置错误"
 			data, _ := json.Marshal(response)
-			_, _ = fmt.Fprintln(w, string(data))
+			_, _ = w.Write(data)
 			return
 		}
 		table.dnsType = dnsTypeString
@@ -337,17 +336,17 @@ func httpCreateDomain(w http.ResponseWriter, r *http.Request) {
 			response.Code = 500
 			response.Msg = err.Error()
 			data, _ := json.Marshal(response)
-			_, _ = fmt.Fprintln(w, string(data))
+			_, _ = w.Write(data)
 			return
 		}
 		response.Code = 200
 		data, _ := json.Marshal(response)
-		_, _ = fmt.Fprintln(w, string(data))
+		_, _ = w.Write(data)
 		return
 	}
 	response.Code = 500
 	data, _ := json.Marshal(response)
-	_, _ = fmt.Fprintln(w, string(data))
+	_, _ = w.Write(data)
 	return
 
 }
@@ -419,7 +418,7 @@ func httpUpdate(w http.ResponseWriter, r *http.Request) {
 		response.Code = 500
 		response.Msg = "认证失败！"
 		data, _ := json.Marshal(response)
-		_, _ = fmt.Fprintln(w, string(data))
+		_, _ = w.Write(data)
 		return
 	}
 	// 检查这个域名是否被别人注册过
@@ -432,7 +431,7 @@ func httpUpdate(w http.ResponseWriter, r *http.Request) {
 			response.Code = 500
 			response.Msg = "域名已经被别的用户注册过，请更换域名！"
 			data, _ := json.Marshal(response)
-			_, _ = fmt.Fprintln(w, string(data))
+			_, _ = w.Write(data)
 			return
 		}
 	}
@@ -446,7 +445,7 @@ func httpUpdate(w http.ResponseWriter, r *http.Request) {
 		response.Code = 500
 		response.Msg = "域名为空"
 		data, _ := json.Marshal(response)
-		_, _ = fmt.Fprintln(w, string(data))
+		_, _ = w.Write(data)
 		return
 	}
 	//logs.Println(response)
@@ -456,7 +455,7 @@ func httpUpdate(w http.ResponseWriter, r *http.Request) {
 		if ipv4 == "" {
 			response.Code = 500
 			data, _ := json.Marshal(response)
-			_, _ = fmt.Fprintln(w, string(data))
+			_, _ = w.Write(data)
 			return
 		}
 		parseIpv4 := net.ParseIP(ipv4)
@@ -468,7 +467,7 @@ func httpUpdate(w http.ResponseWriter, r *http.Request) {
 		if ipv6 == "" {
 			response.Code = 500
 			data, _ := json.Marshal(response)
-			_, _ = fmt.Fprintln(w, string(data))
+			_, _ = w.Write(data)
 			return
 		}
 		response.Value = ipv6
@@ -480,7 +479,7 @@ func httpUpdate(w http.ResponseWriter, r *http.Request) {
 		if cname == "" {
 			response.Code = 500
 			data, _ := json.Marshal(response)
-			_, _ = fmt.Fprintln(w, string(data))
+			_, _ = w.Write(data)
 			return
 		}
 		response.Value = cname
@@ -490,14 +489,14 @@ func httpUpdate(w http.ResponseWriter, r *http.Request) {
 		response.Code = 500
 		response.Msg = "提交的参数不对劲！"
 		data, _ := json.Marshal(response)
-		_, _ = fmt.Fprintln(w, string(data))
+		_, _ = w.Write(data)
 		return
 	}
 
 	if response.Code == 500 {
 
 		data, _ := json.Marshal(response)
-		_, _ = fmt.Fprintln(w, string(data))
+		_, _ = w.Write(data)
 		return
 	}
 
@@ -508,14 +507,14 @@ func httpUpdate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		response.Code = 500
 		data, _ := json.Marshal(response)
-		_, _ = fmt.Fprintln(w, string(data))
+		_, _ = w.Write(data)
 		return
 	}
 	response.Code = 200
 	//log.Println("成功接收心跳包：", response.Domain, response.Value, response.DnsType)
 	//logger.Println("成功接收心跳包：", response.Domain, response.Value, response.DnsType)
 	data, _ := json.Marshal(response)
-	_, _ = fmt.Fprintln(w, string(data))
+	_, _ = w.Write(data)
 	//log.Println("成功接收心跳包：", response.Domain, response.Value, response.DnsType)
 	//logger.Println("成功接收心跳包：", response.Domain, response.Value, response.DnsType)
 	return

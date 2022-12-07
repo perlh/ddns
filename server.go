@@ -16,6 +16,7 @@ import (
 
 // 互斥变量
 var mu sync.RWMutex
+var mu1 sync.RWMutex
 var databases Databases
 
 type User struct {
@@ -30,6 +31,8 @@ type Users struct {
 }
 
 func (u *Users) add(user User) (err error) {
+	mu1.Lock()
+	defer mu1.Unlock()
 	// 检查是否存在这个用户
 	_, err1 := u.searchByUsername(user.UserName)
 	if err1 == nil {
@@ -47,6 +50,8 @@ func (u *Users) add(user User) (err error) {
 }
 
 func (u *Users) del(user User) {
+	mu1.Lock()
+	defer mu1.Unlock()
 	var tmp []User
 	if user.UserId == 0 {
 		// 不能删除本地用户
@@ -62,8 +67,9 @@ func (u *Users) del(user User) {
 }
 
 func (u *Users) update(user User) {
+	mu1.Lock()
+	defer mu1.Unlock()
 	var tmp []User
-	//var tmpTable Table
 	for _, value := range u.data {
 		if value.UserId == user.UserId {
 
@@ -75,6 +81,7 @@ func (u *Users) update(user User) {
 	u.data = tmp
 }
 func (u *Users) searchByToken(Token string) (user User, err error) {
+
 	for _, value := range u.data {
 		if value.Token == Token {
 			return value, nil

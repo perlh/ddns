@@ -16,29 +16,20 @@ func RegisterUser() (ok bool) {
 		User
 	}
 	var response Response
-	httpClient := http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			Dial: (&net.Dialer{
-				Timeout:   2 * time.Second,
-				Deadline:  time.Now().Add(3 * time.Second),
-				KeepAlive: 2 * time.Second,
-			}).Dial,
-			TLSHandshakeTimeout: 2 * time.Second,
-		},
-		Timeout: 2 * time.Second,
-	}
 	url1 := "http://" + client.ServerAddr + "/register"
 	//encodeToken(user,passwd)
 	token := encodeToken(client.Root, client.RootPassword)
-	resp, err := httpClient.PostForm(url1,
+	resp, err := http.PostForm(url1,
 		url.Values{"user": {client.Username}, "password": {client.Password}, "root_token": {token}})
 	if err != nil {
-		// handle error
-		//log.Println("http请求发送失败！")
 		return false
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		log.Printf("http code : %d\n", resp.StatusCode)
+		return false
+	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Println("err2")
@@ -62,22 +53,9 @@ func Update(domain string, dnsType string, value string) (ok bool) {
 		Value   string `json:"value"`
 	}
 	var response Response
-	httpClient := http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			Dial: (&net.Dialer{
-				Timeout:   2 * time.Second,
-				Deadline:  time.Now().Add(3 * time.Second),
-				KeepAlive: 2 * time.Second,
-			}).Dial,
-			TLSHandshakeTimeout: 2 * time.Second,
-		},
-		Timeout: 2 * time.Second,
-	}
-
 	url1 := "http://" + client.ServerAddr + "/update"
 	token := encodeToken(client.Username, client.Password)
-	resp, err := httpClient.PostForm(url1,
+	resp, err := http.PostForm(url1,
 		url.Values{"domain": {domain}, "dnsType": {dnsType}, "value": {value}, "token": {token}})
 	if err != nil {
 		// handle error
@@ -86,6 +64,10 @@ func Update(domain string, dnsType string, value string) (ok bool) {
 		return ok
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		log.Printf("http code : %d\n", resp.StatusCode)
+		return false
+	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Println("err2")
@@ -119,6 +101,12 @@ func CreateRandDomain(dnsType string, value string, time string) (ok bool) {
 		return false
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		log.Printf("http code : %d\n", resp.StatusCode)
+		return false
+	}
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Println("err2")
@@ -128,7 +116,7 @@ func CreateRandDomain(dnsType string, value string, time string) (ok bool) {
 		log.Println("反序列化失败")
 		return false
 	}
-	log.Println(response)
+	//log.Println(response)
 	if response.Code == 200 {
 		client.LocalDomain = response.Domain
 		return true
@@ -137,7 +125,7 @@ func CreateRandDomain(dnsType string, value string, time string) (ok bool) {
 }
 
 func clientStart() {
-	log.Println(client.DnsType)
+	//log.Println(client.DnsType)
 
 	if client.DnsType == "A" || client.DnsType == "AAAA" {
 

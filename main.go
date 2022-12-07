@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -56,8 +55,6 @@ var (
 var logger *log.Logger
 
 func init() {
-	//指定路径的文件，无则创建
-	//fmt.Println("xxx")
 	logFile, err := os.OpenFile("./logs/log.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		panic(err)
@@ -72,9 +69,12 @@ func main() {
 	flag.StringVar(&serverPath, "s", "", "")
 	flag.StringVar(&clientPath, "c", "", "")
 	flag.Parse()
-	log.Println(clientPath)
+	//log.Println(clientPath)
 	// 检查参数合法性
 	if serverPath == "" && clientPath == "" {
+		serverPath = "./conf/ddns.conf"
+		checkFlagsConfig(true, serverPath)
+		serverStart()
 		return
 	}
 	if clientPath != "" {
@@ -182,7 +182,7 @@ func copyConf2Client(client *Client, confs map[string]string) (err error) {
 				break
 			}
 		default:
-			fmt.Println(value)
+			//fmt.Println(value)
 			return errors.New("配置文件出错！")
 
 		}
