@@ -1,6 +1,6 @@
 # ddns
 A simple DNS server that also acts as a DDNS server
-
+the project is old
 
 # usage
 ## server
